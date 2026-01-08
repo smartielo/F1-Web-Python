@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
+import TrackMap from './TrackMap';
 
 function App() {
   const [message, setMessage] = useState("Carregando...")
@@ -29,6 +30,11 @@ function App() {
   return (
     <div style={{ padding: '20px', fontFamily: 'Arial', backgroundColor: '#242424', color: 'white', minHeight: '100vh' }}>
       <h1>🏎️ F1 Web Telemetry</h1>
+
+
+      {/* Testando com Brasil 2023 (Round 20), Piloto VER */}
+      <TrackMap year={2023} raceId={20} driver="VER" />
+
 
       {/* Caixa de Status */}
       <div style={{
