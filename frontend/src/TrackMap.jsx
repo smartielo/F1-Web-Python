@@ -12,7 +12,7 @@ const TrackMap = ({ year, raceId, driver }) => {
         const fetchTelemetry = async () => {
             setStatus(`📡 Baixando dados de ${driver}...`);
             try {
-                const response = await axios.get(`http://127.0.0.1:8000/api/telemetry/${year}/${raceId}/${driver}`);
+                const response = await axios.get(`${import.meta.env.VITE_API_URL}/api/telemetry/${year}/${raceId}/${driver}`);
                 const data = response.data;
 
                 if (data.length > 0) {

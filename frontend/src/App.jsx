@@ -8,12 +8,12 @@ function App() {
 
   useEffect(() => {
     // Busca status
-    axios.get('http://127.0.0.1:8000/')
+    axios.get('${import.meta.env.VITE_API_URL}/')
       .then(response => setMessage(response.data.message))
       .catch(() => setMessage("Offline"))
 
     // Busca corridas
-    axios.get('http://127.0.0.1:8000/api/races/2023')
+    axios.get('${import.meta.env.VITE_API_URL}/api/races/2023')
       .then(response => setRaces(response.data))
       .catch(error => console.error(error))
   }, [])
