@@ -97,6 +97,18 @@ def get_telemetry(year: int, race_id: int, driver_code: str):
                 "gear": row['nGear']
             })
 
+        for _, row in telemetry.iterrows():
+            data.append({
+                "time": row['Time'].total_seconds(),
+                "x": row['X'],
+                "y": row['Y'],
+                "speed": row['Speed'],
+                "gear": row['nGear'],
+                # --- ADICIONE ISSO ---
+                "throttle": row['Throttle'],  # 0 a 100
+                "brake": row['Brake']  # True (1) ou False (0) na maioria dos casos antigos, ou pressão 0-100
+            })
+
         return data
     except Exception as e:
         print(e)
