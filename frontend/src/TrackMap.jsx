@@ -202,26 +202,32 @@ const TrackMap = ({ year, raceId, driver }) => {
     };
 
     return (
-        <div className="bg-gray-900 p-1 rounded-xl border border-gray-800 shadow-2xl overflow-hidden">
-            <div className="bg-gray-800/50 px-6 py-3 flex justify-between items-center border-b border-gray-700">
-                <div className="flex items-center gap-3">
-                    <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse"></div>
-                    <h3 className="font-bold text-gray-100 tracking-wide">
-                        LIVE REPLAY <span className="text-gray-500 mx-2">|</span> {driver}
-                    </h3>
-                </div>
-                <div className="text-xs font-mono text-cyan-400 border border-cyan-900 bg-cyan-950/30 px-2 py-1 rounded">
-                    {year} - R{raceId}
-                </div>
+        <div className="w-full h-full bg-gray-950 relative flex flex-col">
+
+            {/* Header Flutuante dentro do Mapa */}
+            <div className="absolute top-4 left-4 z-10 flex items-center gap-3 bg-black/60 backdrop-blur-sm px-4 py-2 rounded-full border border-gray-800 shadow-lg">
+                <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
+                <h3 className="font-bold text-gray-100 tracking-wide text-xs font-mono">
+                    LIVE <span className="text-gray-600 mx-2">|</span> {driver}
+                </h3>
             </div>
 
-            <div className="relative w-full h-[500px] bg-black">
+            {/* Container do Canvas */}
+            <div className="relative w-full h-full flex items-center justify-center bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-gray-900 to-black">
+
                 {!status.includes("Simulando") && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/80 z-10">
-                        <div className="text-cyan-400 font-mono animate-bounce">{status}</div>
+                   <div className="absolute inset-0 flex items-center justify-center bg-black/80 z-20">
+                        <div className="text-cyan-400 font-mono text-sm animate-pulse">{status}</div>
                     </div>
                 )}
-                <canvas ref={canvasRef} width={800} height={600} className="w-full h-full object-contain block" />
+
+                {/* O Canvas agora tem max-height para não estourar se a tela for pequena */}
+                <canvas
+                    ref={canvasRef}
+                    width={800}
+                    height={600}
+                    className="max-w-full max-h-full object-contain"
+                />
             </div>
         </div>
     );

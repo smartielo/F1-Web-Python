@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
 import TrackMap from './TrackMap';
-import Leaderboard from './Leaderboard'; // <--- Importe o novo componente
+import Leaderboard from './Leaderboard';
+import CircuitInfo from './CircuitInfo';
 
 function App() {
   const [status, setStatus] = useState("Conectando...")
@@ -27,12 +28,9 @@ function App() {
 
   const handleRaceSelect = async (race) => {
     setSelectedRace(race);
-    // setSelectedDriver(null); // (Opcional: Não resetar o piloto se quiser manter o foco)
-
     try {
       const res = await axios.get(`${API_URL}/api/drivers/${selectedYear}/${race.round}`);
       setDriversList(res.data);
-      // Se não tiver piloto selecionado, pega o primeiro (Geralmente o VER ou Pole)
       if (!selectedDriver) {
           const defaultDriver = res.data.find(d => d.code === 'VER') ? 'VER' : res.data[0].code;
           setSelectedDriver(defaultDriver);
@@ -43,26 +41,30 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-black text-gray-100 font-sans overflow-hidden flex flex-col">
+    // MUDANÇA 1: h-screen e overflow-hidden para travar a tela
+    <div className="h-screen w-full bg-black text-gray-100 font-sans overflow-hidden flex flex-col">
 
-      {/* Header Compacto */}
-      <header className="bg-gray-900/80 backdrop-blur border-b border-gray-800 h-14 flex items-center justify-between px-6 shrink-0">
+      {/* Header Fixo */}
+      <header className="bg-gray-900/90 backdrop-blur border-b border-gray-800 h-14 flex items-center justify-between px-6 shrink-0 z-50">
          <div className="flex items-center gap-2">
             <span className="text-2xl">🏎️</span>
             <h1 className="font-bold text-lg tracking-tight bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent">
                 F1 Telemetry Hub
             </h1>
          </div>
-         <div className="text-xs font-mono text-gray-500">
-            {status === "ONLINE" ? <span className="text-green-500">● SYSTEM ONLINE</span> : <span className="text-red-500">● DISCONNECTED</span>}
+         <div className="text-xs font-mono">
+            {status === "ONLINE" ?
+                <span className="text-green-500 bg-green-900/20 px-2 py-1 rounded border border-green-900">● ONLINE</span> :
+                <span className="text-red-500 bg-red-900/20 px-2 py-1 rounded border border-red-900">● OFFLINE</span>
+            }
          </div>
       </header>
 
-      {/* --- GRID PRINCIPAL (LAYOUT TV) --- */}
+      {/* Grid Principal */}
       <main className="flex-1 p-4 grid grid-cols-1 lg:grid-cols-12 gap-4 h-[calc(100vh-3.5rem)]">
 
-        {/* 1. COLUNA ESQUERDA: LEADERBOARD (Ocupa 2 de 12) */}
-        <aside className="lg:col-span-2 h-full">
+        {/* ESQUERDA: Leaderboard (Com rolagem interna) */}
+        <aside className="lg:col-span-2 h-full overflow-hidden">
             <Leaderboard
                 drivers={driversList}
                 selectedDriver={selectedDriver}
@@ -70,28 +72,37 @@ function App() {
             />
         </aside>
 
-        {/* 2. COLUNA CENTRAL: MAPA (Ocupa 7 de 12 - O Palco Principal) */}
-        <section className="lg:col-span-7 h-full flex flex-col">
-            {selectedRace && selectedDriver ? (
-                <div className="h-full">
-                    <TrackMap
-                        year={selectedYear}
-                        raceId={selectedRace.round}
-                        driver={selectedDriver}
-                    />
-                </div>
-            ) : (
-                <div className="h-full border border-gray-800 rounded-xl flex items-center justify-center bg-gray-900/30 text-gray-600">
-                    Selecione uma sessão
-                </div>
-            )}
+        {/* CENTRO: Mapa + Infos (Sem rolagem, ajustável) */}
+        <section className="lg:col-span-7 h-full flex flex-col gap-4 overflow-hidden">
+
+            {/* Mapa: Ocupa o espaço que sobrar (flex-1) */}
+            <div className="flex-1 bg-gray-900 rounded-xl border border-gray-800 relative overflow-hidden flex flex-col justify-center">
+                {selectedRace && selectedDriver ? (
+                    <div className="w-full h-full">
+                        <TrackMap
+                            year={selectedYear}
+                            raceId={selectedRace.round}
+                            driver={selectedDriver}
+                        />
+                    </div>
+                ) : (
+                    <div className="h-full flex items-center justify-center text-gray-600 animate-pulse">
+                        Selecione uma corrida para carregar a pista
+                    </div>
+                )}
+            </div>
+
+            {/* Infos: Tamanho fixo, colado no rodapé da seção central */}
+            <div className="h-auto shrink-0">
+                <CircuitInfo race={selectedRace} />
+            </div>
         </section>
 
-        {/* 3. COLUNA DIREITA: CALENDÁRIO/SESSÕES (Ocupa 3 de 12) */}
+        {/* DIREITA: Lista de Corridas (Com rolagem interna) */}
         <aside className="lg:col-span-3 h-full flex flex-col bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
-            <div className="p-3 border-b border-gray-800 bg-gray-800/80 flex justify-between items-center">
+            <div className="p-3 border-b border-gray-800 bg-gray-800/80 flex justify-between items-center shadow-md z-10">
                 <h2 className="font-bold text-sm">📅 Temporada {selectedYear}</h2>
-                <span className="text-xs bg-gray-700 px-2 py-0.5 rounded text-gray-300">Race</span>
+                <span className="text-[10px] bg-gray-800 border border-gray-700 px-2 py-0.5 rounded text-gray-300">RACES</span>
             </div>
 
             <div className="overflow-y-auto custom-scrollbar p-2 space-y-1 flex-1">
@@ -102,7 +113,7 @@ function App() {
                         className={`
                         p-3 rounded border cursor-pointer transition-all hover:bg-gray-800
                         ${selectedRace?.round === race.round
-                            ? 'bg-blue-900/20 border-blue-500/50'
+                            ? 'bg-blue-900/20 border-blue-500/50 shadow-[inset_0_0_10px_rgba(59,130,246,0.2)]'
                             : 'border-transparent hover:border-gray-700'}
                         `}
                     >
@@ -117,13 +128,6 @@ function App() {
                         </h3>
                     </div>
                 ))}
-            </div>
-
-            {/* Espaço reservado para o futuro seletor de sessões */}
-            <div className="p-3 border-t border-gray-800 bg-gray-900">
-                <button className="w-full py-2 text-xs font-bold text-gray-500 border border-dashed border-gray-700 rounded hover:text-white hover:border-gray-500 transition-colors">
-                    + EXPANDIR SESSÕES (EM BREVE)
-                </button>
             </div>
         </aside>
 
