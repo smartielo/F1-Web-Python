@@ -9,7 +9,11 @@ function App() {
   const [races, setRaces] = useState([])
   const [selectedYear, setSelectedYear] = useState(2023)
   const [selectedRace, setSelectedRace] = useState(null)
+
+  // --- MUDANÇA 1: Estado para o Piloto Principal e o Rival ---
   const [selectedDriver, setSelectedDriver] = useState(null)
+  const [opponentDriver, setOpponentDriver] = useState(null)
+
   const [driversList, setDriversList] = useState([])
 
   const API_URL = import.meta.env.VITE_API_URL;
@@ -28,6 +32,7 @@ function App() {
 
   const handleRaceSelect = async (race) => {
     setSelectedRace(race);
+    setOpponentDriver(null); // Reseta o rival ao mudar de pista
     try {
       const res = await axios.get(`${API_URL}/api/drivers/${selectedYear}/${race.round}`);
       setDriversList(res.data);
@@ -40,11 +45,15 @@ function App() {
     }
   }
 
-  return (
-    // MUDANÇA 1: h-screen e overflow-hidden para travar a tela
-    <div className="h-screen w-full bg-black text-gray-100 font-sans overflow-hidden flex flex-col">
+  // --- MUDANÇA 2: Função para selecionar o Rival (Botão Direito) ---
+  const handleDriverRightClick = (e, driverCode) => {
+    e.preventDefault(); // Impede o menu de contexto do navegador
+    if (driverCode === selectedDriver) return; // Não pode ser rival de si mesmo
+    setOpponentDriver(driverCode === opponentDriver ? null : driverCode); // Liga/Desliga
+  }
 
-      {/* Header Fixo */}
+  return (
+    <div className="h-screen w-full bg-black text-gray-100 font-sans overflow-hidden flex flex-col">
       <header className="bg-gray-900/90 backdrop-blur border-b border-gray-800 h-14 flex items-center justify-between px-6 shrink-0 z-50">
          <div className="flex items-center gap-2">
             <span className="text-2xl">🏎️</span>
@@ -60,51 +69,47 @@ function App() {
          </div>
       </header>
 
-      {/* Grid Principal */}
       <main className="flex-1 p-4 grid grid-cols-1 lg:grid-cols-12 gap-4 h-[calc(100vh-3.5rem)]">
 
-        {/* ESQUERDA: Leaderboard (Com rolagem interna) */}
+        {/* Leaderboard: Agora aceita onContextMenu para o botão direito */}
         <aside className="lg:col-span-2 h-full overflow-hidden">
             <Leaderboard
                 drivers={driversList}
                 selectedDriver={selectedDriver}
+                opponentDriver={opponentDriver}
                 onSelectDriver={setSelectedDriver}
+                onRightClickDriver={handleDriverRightClick}
             />
         </aside>
 
-        {/* CENTRO: Mapa + Infos (Sem rolagem, ajustável) */}
         <section className="lg:col-span-7 h-full flex flex-col gap-4 overflow-hidden">
-
-            {/* Mapa: Ocupa o espaço que sobrar (flex-1) */}
             <div className="flex-1 bg-gray-900 rounded-xl border border-gray-800 relative overflow-hidden flex flex-col justify-center">
                 {selectedRace && selectedDriver ? (
                     <div className="w-full h-full">
+                        {/* --- MUDANÇA 3: Passamos o opponentDriver para o mapa --- */}
                         <TrackMap
                             year={selectedYear}
                             raceId={selectedRace.round}
                             driver={selectedDriver}
+                            opponent={opponentDriver}
                         />
                     </div>
                 ) : (
                     <div className="h-full flex items-center justify-center text-gray-600 animate-pulse">
-                        Selecione uma corrida para carregar a pista
+                        Selecione uma corrida
                     </div>
                 )}
             </div>
-
-            {/* Infos: Tamanho fixo, colado no rodapé da seção central */}
             <div className="h-auto shrink-0">
                 <CircuitInfo race={selectedRace} />
             </div>
         </section>
 
-        {/* DIREITA: Lista de Corridas (Com rolagem interna) */}
         <aside className="lg:col-span-3 h-full flex flex-col bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
             <div className="p-3 border-b border-gray-800 bg-gray-800/80 flex justify-between items-center shadow-md z-10">
                 <h2 className="font-bold text-sm">📅 Temporada {selectedYear}</h2>
                 <span className="text-[10px] bg-gray-800 border border-gray-700 px-2 py-0.5 rounded text-gray-300">RACES</span>
             </div>
-
             <div className="overflow-y-auto custom-scrollbar p-2 space-y-1 flex-1">
                 {races.map((race) => (
                     <div
@@ -130,7 +135,6 @@ function App() {
                 ))}
             </div>
         </aside>
-
       </main>
     </div>
   )
