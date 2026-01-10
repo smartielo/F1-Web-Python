@@ -69,34 +69,56 @@ def get_drivers(year: int, race_id: int):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/laps/{year}/{race_id}/{driver_code}")
+def get_laps(year: int, race_id: int, driver_code: str):
+    try:
+        session = fastf1.get_session(year, race_id, 'R')
+        session.load(telemetry=False, weather=False, messages=False)  # Carregamento leve
+
+        laps = session.laps.pick_drivers(driver_code)
+
+        # Filtra voltas válidas (sem pit in/out malucos)
+        valid_laps = laps.pick_quicklaps()
+
+        laps_data = []
+        for _, row in valid_laps.iterrows():
+            # Formata o tempo da volta (ex: 1:32.400)
+            lap_time = str(row['LapTime']).split('days')[-1].strip()
+            # Remove o "00:" inicial se tiver
+            if lap_time.startswith("00:"):
+                lap_time = lap_time[3:]
+
+            laps_data.append({
+                "lap_number": int(row['LapNumber']),
+                "lap_time": lap_time[:10],  # Corta precisão excessiva
+                "is_fastest": row['LapNumber'] == laps.pick_fastest()['LapNumber']
+            })
+
+        return laps_data
+    except Exception as e:
+        print(f"Erro laps: {e}")
+        return []
+
+
+# 2. ATUALIZADO: Telemetria aceita "lap_number" opcional
 @app.get("/api/telemetry/{year}/{race_id}/{driver_code}")
-def get_telemetry(year: int, race_id: int, driver_code: str):
-    """ O Endpoint mais importante: Retorna os dados para o gráfico """
+def get_telemetry(year: int, race_id: int, driver_code: str, lap: int = 0):
     try:
         session = fastf1.get_session(year, race_id, 'R')
         session.load()
 
-        # Pega a volta mais rápida do piloto
-        driver_lap = session.laps.pick_drivers(driver_code).pick_fastest()
-        telemetry = driver_lap.get_telemetry()
+        driver_laps = session.laps.pick_drivers(driver_code)
 
-        # Downsampling (Opcional): Pular alguns frames para o JSON não ficar gigante
-        # telemetry = telemetry.iloc[::2]
+        # Se lap=0, pega a mais rápida (comportamento padrão)
+        if lap == 0:
+            target_lap = driver_laps.pick_fastest()
+        else:
+            # Tenta pegar a volta específica
+            target_lap = driver_laps[driver_laps['LapNumber'] == lap].iloc[0]
 
-        # Prepara os dados para o Frontend
+        telemetry = target_lap.get_telemetry()
+
         data = []
-
-        # Vamos normalizar aqui no backend ou no frontend?
-        # Geralmente mandamos os dados brutos (X, Y) e o Frontend decide o tamanho da tela.
-        for _, row in telemetry.iterrows():
-            data.append({
-                "time": row['Time'].total_seconds(),
-                "x": row['X'],
-                "y": row['Y'],
-                "speed": row['Speed'],
-                "gear": row['nGear']
-            })
-
         for _, row in telemetry.iterrows():
             data.append({
                 "time": row['Time'].total_seconds(),
@@ -104,17 +126,13 @@ def get_telemetry(year: int, race_id: int, driver_code: str):
                 "y": row['Y'],
                 "speed": row['Speed'],
                 "gear": row['nGear'],
-                # --- ADICIONE ISSO ---
-                "throttle": row['Throttle'],  # 0 a 100
-                "brake": row['Brake']  # True (1) ou False (0) na maioria dos casos antigos, ou pressão 0-100
+                "throttle": row['Throttle'],
+                "brake": row['Brake']
             })
-
         return data
     except Exception as e:
-        print(e)
+        print(f"Erro telemetria: {e}")
         raise HTTPException(status_code=500, detail="Erro ao processar telemetria")
-
-
 # Para rodar via código (opcional, pois usaremos terminal)
 if __name__ == "__main__":
     import uvicorn

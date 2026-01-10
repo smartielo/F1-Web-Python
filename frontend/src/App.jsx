@@ -10,14 +10,17 @@ function App() {
   const [selectedYear, setSelectedYear] = useState(2023)
   const [selectedRace, setSelectedRace] = useState(null)
 
-  // --- MUDANÇA 1: Estado para o Piloto Principal e o Rival ---
   const [selectedDriver, setSelectedDriver] = useState(null)
   const [opponentDriver, setOpponentDriver] = useState(null)
-
   const [driversList, setDriversList] = useState([])
+
+  // --- NOVO: Estados de Voltas ---
+  const [lapsList, setLapsList] = useState([])
+  const [selectedLap, setSelectedLap] = useState(0) // 0 = Fastest
 
   const API_URL = import.meta.env.VITE_API_URL;
 
+  // Carga inicial
   useEffect(() => {
     axios.get(`${API_URL}/`)
       .then(() => setStatus("ONLINE"))
@@ -30,26 +33,48 @@ function App() {
       })
   }, [])
 
+  // Ao selecionar corrida
   const handleRaceSelect = async (race) => {
     setSelectedRace(race);
-    setOpponentDriver(null); // Reseta o rival ao mudar de pista
+    setOpponentDriver(null);
+    setLapsList([]); // Limpa voltas
     try {
       const res = await axios.get(`${API_URL}/api/drivers/${selectedYear}/${race.round}`);
       setDriversList(res.data);
       if (!selectedDriver) {
           const defaultDriver = res.data.find(d => d.code === 'VER') ? 'VER' : res.data[0].code;
-          setSelectedDriver(defaultDriver);
+          handleDriverSelect(defaultDriver); // Usa a função nova
+      } else {
+        // Se já tem piloto, atualiza as voltas dele pra nova pista
+        fetchLaps(race.round, selectedDriver);
       }
     } catch (error) {
-      console.error("Erro ao buscar pilotos", error);
+      console.error("Erro drivers:", error);
     }
   }
 
-  // --- MUDANÇA 2: Função para selecionar o Rival (Botão Direito) ---
+  // NOVA FUNÇÃO: Selecionar Piloto e buscar voltas
+  const handleDriverSelect = (driverCode) => {
+    setSelectedDriver(driverCode);
+    if(selectedRace) fetchLaps(selectedRace.round, driverCode);
+  }
+
+  // NOVA FUNÇÃO: Busca voltas no backend
+  const fetchLaps = async (round, driver) => {
+    setLapsList([]); // Limpa lista antiga visualmente
+    setSelectedLap(0); // Reseta para "Fastest"
+    try {
+        const res = await axios.get(`${API_URL}/api/laps/${selectedYear}/${round}/${driver}`);
+        setLapsList(res.data);
+    } catch (error) {
+        console.error("Erro laps:", error);
+    }
+  }
+
   const handleDriverRightClick = (e, driverCode) => {
-    e.preventDefault(); // Impede o menu de contexto do navegador
-    if (driverCode === selectedDriver) return; // Não pode ser rival de si mesmo
-    setOpponentDriver(driverCode === opponentDriver ? null : driverCode); // Liga/Desliga
+    e.preventDefault();
+    if (driverCode === selectedDriver) return;
+    setOpponentDriver(driverCode === opponentDriver ? null : driverCode);
   }
 
   return (
@@ -62,22 +87,18 @@ function App() {
             </h1>
          </div>
          <div className="text-xs font-mono">
-            {status === "ONLINE" ?
-                <span className="text-green-500 bg-green-900/20 px-2 py-1 rounded border border-green-900">● ONLINE</span> :
-                <span className="text-red-500 bg-red-900/20 px-2 py-1 rounded border border-red-900">● OFFLINE</span>
-            }
+            {status === "ONLINE" ? <span className="text-green-500">● ONLINE</span> : <span className="text-red-500">● OFFLINE</span>}
          </div>
       </header>
 
       <main className="flex-1 p-4 grid grid-cols-1 lg:grid-cols-12 gap-4 h-[calc(100vh-3.5rem)]">
 
-        {/* Leaderboard: Agora aceita onContextMenu para o botão direito */}
         <aside className="lg:col-span-2 h-full overflow-hidden">
             <Leaderboard
                 drivers={driversList}
                 selectedDriver={selectedDriver}
                 opponentDriver={opponentDriver}
-                onSelectDriver={setSelectedDriver}
+                onSelectDriver={handleDriverSelect} // <--- Função Atualizada
                 onRightClickDriver={handleDriverRightClick}
             />
         </aside>
@@ -86,12 +107,17 @@ function App() {
             <div className="flex-1 bg-gray-900 rounded-xl border border-gray-800 relative overflow-hidden flex flex-col justify-center">
                 {selectedRace && selectedDriver ? (
                     <div className="w-full h-full">
-                        {/* --- MUDANÇA 3: Passamos o opponentDriver para o mapa --- */}
+                        {/* --- COMPONENTE ATUALIZADO --- */}
                         <TrackMap
                             year={selectedYear}
                             raceId={selectedRace.round}
                             driver={selectedDriver}
                             opponent={opponentDriver}
+
+                            // Props de Voltas e Controle
+                            lapNumber={selectedLap}
+                            onLapChange={setSelectedLap}
+                            availableLaps={lapsList}
                         />
                     </div>
                 ) : (
@@ -106,31 +132,20 @@ function App() {
         </section>
 
         <aside className="lg:col-span-3 h-full flex flex-col bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
-            <div className="p-3 border-b border-gray-800 bg-gray-800/80 flex justify-between items-center shadow-md z-10">
+             {/* ... (Lista de Corridas igual) ... */}
+             {/* (Copie o código da lista de corridas do seu App.jsx anterior ou mantenha se não mudou) */}
+             <div className="p-3 border-b border-gray-800 bg-gray-800/80 flex justify-between items-center shadow-md z-10">
                 <h2 className="font-bold text-sm">📅 Temporada {selectedYear}</h2>
                 <span className="text-[10px] bg-gray-800 border border-gray-700 px-2 py-0.5 rounded text-gray-300">RACES</span>
             </div>
             <div className="overflow-y-auto custom-scrollbar p-2 space-y-1 flex-1">
                 {races.map((race) => (
-                    <div
-                        key={race.round}
-                        onClick={() => handleRaceSelect(race)}
-                        className={`
-                        p-3 rounded border cursor-pointer transition-all hover:bg-gray-800
-                        ${selectedRace?.round === race.round
-                            ? 'bg-blue-900/20 border-blue-500/50 shadow-[inset_0_0_10px_rgba(59,130,246,0.2)]'
-                            : 'border-transparent hover:border-gray-700'}
-                        `}
-                    >
+                    <div key={race.round} onClick={() => handleRaceSelect(race)} className={`p-3 rounded border cursor-pointer transition-all hover:bg-gray-800 ${selectedRace?.round === race.round ? 'bg-blue-900/20 border-blue-500/50' : 'border-transparent hover:border-gray-700'}`}>
                         <div className="flex justify-between items-start mb-1">
-                            <span className={`font-mono text-[10px] font-bold uppercase ${selectedRace?.round === race.round ? 'text-blue-400' : 'text-gray-500'}`}>
-                                {race.location}
-                            </span>
+                            <span className={`font-mono text-[10px] font-bold uppercase ${selectedRace?.round === race.round ? 'text-blue-400' : 'text-gray-500'}`}>{race.location}</span>
                             <span className="text-gray-600 text-[10px]">R{race.round}</span>
                         </div>
-                        <h3 className={`font-bold text-sm truncate ${selectedRace?.round === race.round ? 'text-white' : 'text-gray-400'}`}>
-                            {race.name}
-                        </h3>
+                        <h3 className={`font-bold text-sm truncate ${selectedRace?.round === race.round ? 'text-white' : 'text-gray-400'}`}>{race.name}</h3>
                     </div>
                 ))}
             </div>
