@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import fastf1
 import os
 import pandas as pd
+import numpy as np
 
 # 1. Configuração Inicial
 app = FastAPI()
@@ -38,10 +39,10 @@ def get_races(year: int):
         for index, row in schedule.iterrows():
             # Pegamos apenas eventos oficiais
             races_list.append({
-                "round": row['RoundNumber'],
-                "name": row['EventName'],
+                "round": int(row['RoundNumber']),  # Conversão explícita para int
+                "name": str(row['EventName']),
                 "date": str(row['EventDate']),
-                "location": row['Location']
+                "location": str(row['Location'])
             })
         return races_list
     except Exception as e:
@@ -60,9 +61,9 @@ def get_drivers(year: int, race_id: int):
         for drv in session.drivers:
             info = session.get_driver(drv)
             drivers_data.append({
-                "code": info['Abbreviation'],
-                "team": info['TeamName'],
-                "number": info['DriverNumber']
+                "code": str(info['Abbreviation']),
+                "team": str(info['TeamName']),
+                "number": str(info['DriverNumber'])  # Garante que é string
             })
         return drivers_data
     except Exception as e:
@@ -80,6 +81,10 @@ def get_laps(year: int, race_id: int, driver_code: str):
         # Filtra voltas válidas (sem pit in/out malucos)
         valid_laps = laps.pick_quicklaps()
 
+        # OTIMIZAÇÃO: Calcular a volta mais rápida UMA vez fora do loop
+        fastest_lap = laps.pick_fastest()
+        fastest_lap_num = int(fastest_lap['LapNumber']) if not pd.isna(fastest_lap['LapNumber']) else -1
+
         laps_data = []
         for _, row in valid_laps.iterrows():
             # Formata o tempo da volta (ex: 1:32.400)
@@ -88,10 +93,14 @@ def get_laps(year: int, race_id: int, driver_code: str):
             if lap_time.startswith("00:"):
                 lap_time = lap_time[3:]
 
+            # Conversão segura do número da volta
+            lap_num = int(row['LapNumber'])
+
             laps_data.append({
-                "lap_number": int(row['LapNumber']),
+                "lap_number": lap_num,
                 "lap_time": lap_time[:10],  # Corta precisão excessiva
-                "is_fastest": row['LapNumber'] == laps.pick_fastest()['LapNumber']
+                # CORREÇÃO DO ERRO 500: bool() converte o numpy.bool_ para bool nativo
+                "is_fastest": bool(lap_num == fastest_lap_num)
             })
 
         return laps_data
@@ -120,19 +129,23 @@ def get_telemetry(year: int, race_id: int, driver_code: str, lap: int = 0):
 
         data = []
         for _, row in telemetry.iterrows():
+            # CORREÇÃO: Converter todos os tipos NumPy para nativos
             data.append({
                 "time": row['Time'].total_seconds(),
-                "x": row['X'],
-                "y": row['Y'],
-                "speed": row['Speed'],
-                "gear": row['nGear'],
-                "throttle": row['Throttle'],
-                "brake": row['Brake']
+                "x": float(row['X']),  # numpy float -> float
+                "y": float(row['Y']),  # numpy float -> float
+                "speed": float(row['Speed']),  # numpy float/int -> float
+                "gear": int(row['nGear']),  # numpy int -> int
+                "throttle": float(row['Throttle']),
+                "brake": bool(row['Brake']) if row['Brake'] in [0, 1, True, False] else float(row['Brake'])
+                # Tratamento seguro para freio
             })
         return data
     except Exception as e:
         print(f"Erro telemetria: {e}")
         raise HTTPException(status_code=500, detail="Erro ao processar telemetria")
+
+
 # Para rodar via código (opcional, pois usaremos terminal)
 if __name__ == "__main__":
     import uvicorn

@@ -16,9 +16,9 @@ function App() {
 
   // --- NOVO: Estados de Voltas ---
   const [lapsList, setLapsList] = useState([])
-  const [selectedLap, setSelectedLap] = useState(0) // 0 = Fastest
+  const [selectedLap, setSelectedLap] = useState(0) // 0 = Fastest (Volta Rápida Automática)
 
-  const API_URL = import.meta.env.VITE_API_URL;
+  const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
   // Carga inicial
   useEffect(() => {
@@ -37,13 +37,14 @@ function App() {
   const handleRaceSelect = async (race) => {
     setSelectedRace(race);
     setOpponentDriver(null);
-    setLapsList([]); // Limpa voltas
+    setLapsList([]); // Limpa voltas anteriores
     try {
       const res = await axios.get(`${API_URL}/api/drivers/${selectedYear}/${race.round}`);
       setDriversList(res.data);
       if (!selectedDriver) {
+          // Seleciona VER ou o primeiro da lista por padrão
           const defaultDriver = res.data.find(d => d.code === 'VER') ? 'VER' : res.data[0].code;
-          handleDriverSelect(defaultDriver); // Usa a função nova
+          handleDriverSelect(defaultDriver);
       } else {
         // Se já tem piloto, atualiza as voltas dele pra nova pista
         fetchLaps(race.round, selectedDriver);
@@ -53,16 +54,16 @@ function App() {
     }
   }
 
-  // NOVA FUNÇÃO: Selecionar Piloto e buscar voltas
+  // Ao selecionar Piloto
   const handleDriverSelect = (driverCode) => {
     setSelectedDriver(driverCode);
     if(selectedRace) fetchLaps(selectedRace.round, driverCode);
   }
 
-  // NOVA FUNÇÃO: Busca voltas no backend
+  // Busca voltas no backend
   const fetchLaps = async (round, driver) => {
-    setLapsList([]); // Limpa lista antiga visualmente
-    setSelectedLap(0); // Reseta para "Fastest"
+    setLapsList([]); // Limpa lista visualmente enquanto carrega
+    setSelectedLap(0); // Reseta para "Fastest" ao mudar de piloto
     try {
         const res = await axios.get(`${API_URL}/api/laps/${selectedYear}/${round}/${driver}`);
         setLapsList(res.data);
@@ -93,13 +94,19 @@ function App() {
 
       <main className="flex-1 p-4 grid grid-cols-1 lg:grid-cols-12 gap-4 h-[calc(100vh-3.5rem)]">
 
-        <aside className="lg:col-span-2 h-full overflow-hidden">
+        <aside className="lg:col-span-2 h-full overflow-hidden flex flex-col">
+            {/* Passamos as props novas para o Leaderboard aqui */}
             <Leaderboard
                 drivers={driversList}
                 selectedDriver={selectedDriver}
                 opponentDriver={opponentDriver}
-                onSelectDriver={handleDriverSelect} // <--- Função Atualizada
+                onSelectDriver={handleDriverSelect}
                 onRightClickDriver={handleDriverRightClick}
+
+                // PROPS NOVAS PARA OS BOTÕES DE VOLTA
+                laps={lapsList}
+                selectedLap={selectedLap}
+                onSelectLap={setSelectedLap}
             />
         </aside>
 
@@ -107,16 +114,15 @@ function App() {
             <div className="flex-1 bg-gray-900 rounded-xl border border-gray-800 relative overflow-hidden flex flex-col justify-center">
                 {selectedRace && selectedDriver ? (
                     <div className="w-full h-full">
-                        {/* --- COMPONENTE ATUALIZADO --- */}
                         <TrackMap
                             year={selectedYear}
                             raceId={selectedRace.round}
                             driver={selectedDriver}
                             opponent={opponentDriver}
 
-                            // Props de Voltas e Controle
+                            // Passamos a volta selecionada para o mapa buscar a telemetria certa
                             lapNumber={selectedLap}
-                            onLapChange={setSelectedLap}
+                            onLapChange={setSelectedLap} // Para o menu suspenso do mapa também funcionar
                             availableLaps={lapsList}
                         />
                     </div>
@@ -132,8 +138,6 @@ function App() {
         </section>
 
         <aside className="lg:col-span-3 h-full flex flex-col bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
-             {/* ... (Lista de Corridas igual) ... */}
-             {/* (Copie o código da lista de corridas do seu App.jsx anterior ou mantenha se não mudou) */}
              <div className="p-3 border-b border-gray-800 bg-gray-800/80 flex justify-between items-center shadow-md z-10">
                 <h2 className="font-bold text-sm">📅 Temporada {selectedYear}</h2>
                 <span className="text-[10px] bg-gray-800 border border-gray-700 px-2 py-0.5 rounded text-gray-300">RACES</span>
