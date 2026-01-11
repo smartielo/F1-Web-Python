@@ -5,22 +5,22 @@ const TrackMap = ({ year, raceId, driver, opponent, lapNumber, onLapChange, avai
     const canvasRef = useRef(null);
     const [status, setStatus] = useState("Aguardando...");
 
-    // --- ESTADOS DO PLAYER ---
+    // Estados do Player
     const [isPlaying, setIsPlaying] = useState(true);
     const [progress, setProgress] = useState(0);
     const [currentTimeDisplay, setCurrentTimeDisplay] = useState("0:00.000");
 
-    // --- REFS DO MOTOR DE TEMPO ---
+    // Engine Refs
     const requestRef = useRef();
     const lastFrameTime = useRef(0);
     const currentTimeRef = useRef(0);
     const totalTimeRef = useRef(0);
 
-    // Dados brutos
+    // Dados
     const telemetryData = useRef([]);
     const opponentData = useRef([]);
 
-    // 1. Carga de Dados
+    // 1. Busca de Dados
     useEffect(() => {
         const fetchTelemetry = async () => {
             const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
@@ -35,14 +35,11 @@ const TrackMap = ({ year, raceId, driver, opponent, lapNumber, onLapChange, avai
             setStatus(`📡 Baixando ${lapText}...`);
 
             try {
-                // Se lapNumber for 0 (Fastest), enviamos 0 ou vazio (o backend entende 0 como fastest no nosso código novo)
                 const lapParam = lapNumber ? `?lap=${lapNumber}` : '?lap=0';
 
-                // Busca Telemetria do Piloto
                 const res1 = await axios.get(`${API_URL}/api/telemetry/${year}/${raceId}/${driver}${lapParam}`);
                 telemetryData.current = res1.data;
 
-                // Busca Rival (Simplificado: sempre pega a melhor volta do rival para comparar)
                 if (opponent) {
                     const res2 = await axios.get(`${API_URL}/api/telemetry/${year}/${raceId}/${opponent}`);
                     opponentData.current = res2.data;
@@ -64,7 +61,7 @@ const TrackMap = ({ year, raceId, driver, opponent, lapNumber, onLapChange, avai
         if (driver && raceId) {
             fetchTelemetry();
         }
-    }, [year, raceId, driver, opponent, lapNumber]); // <-- Recarrega quando lapNumber mudar
+    }, [year, raceId, driver, opponent, lapNumber]);
 
     // 2. Loop de Animação
     useEffect(() => {
@@ -102,7 +99,7 @@ const TrackMap = ({ year, raceId, driver, opponent, lapNumber, onLapChange, avai
         drawFrame();
     };
 
-    // 4. Desenho
+    // 4. Desenho OTIMIZADO
     const drawFrame = () => {
         const canvas = canvasRef.current;
         if (!canvas) return;
@@ -113,12 +110,12 @@ const TrackMap = ({ year, raceId, driver, opponent, lapNumber, onLapChange, avai
         const ghostData = opponentData.current;
         const timeNow = currentTimeRef.current;
 
+        // Reset
         ctx.clearRect(0, 0, width, height);
-        // Ajuste de DPI se necessário, mas aqui faremos fill simples
-        ctx.fillStyle = '#09090b'; // Fundo igual ao do container
+        ctx.fillStyle = '#09090b';
         ctx.fillRect(0, 0, width, height);
 
-        // Grid sutil
+        // Grid Fundo
         ctx.strokeStyle = '#1a1a1a'; ctx.lineWidth = 1; ctx.beginPath();
         for (let x = 0; x <= width; x += 40) { ctx.moveTo(x, 0); ctx.lineTo(x, height); }
         for (let y = 0; y <= height; y += 40) { ctx.moveTo(0, y); ctx.lineTo(width, y); }
@@ -126,28 +123,55 @@ const TrackMap = ({ year, raceId, driver, opponent, lapNumber, onLapChange, avai
 
         if (mainData.length === 0) return;
 
-        const xValues = mainData.map(p => p.x); const yValues = mainData.map(p => p.y);
-        const minX = Math.min(...xValues); const maxX = Math.max(...xValues);
-        const minY = Math.min(...yValues); const maxY = Math.max(...yValues);
+        // --- ALGORITMO DE CENTRALIZAÇÃO ---
+        const xValues = mainData.map(p => p.x);
+        const yValues = mainData.map(p => p.y);
 
-        const padding = 60;
+        const minX = Math.min(...xValues);
+        const maxX = Math.max(...xValues);
+        const minY = Math.min(...yValues);
+        const maxY = Math.max(...yValues);
+
         const trackWidth = maxX - minX;
         const trackHeight = maxY - minY;
-        const scale = Math.min((width - padding*2) / trackWidth, (height - padding*2) / trackHeight);
 
-        const offsetX = (width - trackWidth * scale) / 2;
-        const offsetY = (height - trackHeight * scale) / 2;
+        // Margem de segurança (padding)
+        const padding = 50;
 
+        // Calcula a escala para caber na tela mantendo a proporção (aspect ratio)
+        const scaleX = (width - padding * 2) / trackWidth;
+        const scaleY = (height - padding * 2) / trackHeight;
+        const scale = Math.min(scaleX, scaleY);
+
+        // Calcula o centro da pista nas coordenadas originais
+        const trackCenterX = (minX + maxX) / 2;
+        const trackCenterY = (minY + maxY) / 2;
+
+        // Calcula o deslocamento para alinhar o centro da pista com o centro da tela
+        // Formula: CentroDaTela - (CentroDaPista * Escala)
+        const offsetX = (width / 2) - (trackCenterX * scale);
+
+        // Importante: No Canvas, Y cresce para baixo, mas na telemetria Y é "cima".
+        // Precisamos inverter o Y na plotagem.
+        // O offset Y precisa considerar essa inversão.
+        const offsetY = (height / 2) + (trackCenterY * scale);
+
+        // Função auxiliar de transformação
         const toScreen = (x, y) => ({
-            x: (x - minX) * scale + offsetX,
-            y: height - ((y - minY) * scale + offsetY) // Inverte Y
+            x: x * scale + offsetX,
+            y: offsetY - y * scale // Note o sinal negativo no Y para inverter o eixo vertical
         });
+        // ----------------------------------
 
         // Desenha Traçado
-        ctx.shadowBlur = 10; ctx.shadowColor = '#0891b2'; ctx.strokeStyle = '#0891b2';
+        ctx.shadowBlur = 8; ctx.shadowColor = '#0891b2'; ctx.strokeStyle = '#0891b2';
         ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
         ctx.beginPath();
-        mainData.forEach((p, i) => { const pos = toScreen(p.x, p.y); if (i === 0) ctx.moveTo(pos.x, pos.y); else ctx.lineTo(pos.x, pos.y); });
+        mainData.forEach((p, i) => {
+            const pos = toScreen(p.x, p.y);
+            if (i === 0) ctx.moveTo(pos.x, pos.y);
+            else ctx.lineTo(pos.x, pos.y);
+        });
         ctx.stroke(); ctx.shadowBlur = 0;
 
         // Posição Atual
@@ -169,34 +193,41 @@ const TrackMap = ({ year, raceId, driver, opponent, lapNumber, onLapChange, avai
 
         if (mainPacket) {
             const mp = toScreen(mainPacket.x, mainPacket.y);
-            ctx.shadowBlur = 15; ctx.shadowColor = '#ef4444'; ctx.fillStyle = '#ef4444';
-            ctx.beginPath(); ctx.arc(mp.x, mp.y, 8, 0, 2 * Math.PI); ctx.fill(); ctx.shadowBlur = 0;
 
-            // HUD Fixo
-            const hudX = 20; const hudY = 20;
-            ctx.fillStyle = 'rgba(10,10,10,0.8)'; ctx.strokeStyle='#333'; ctx.lineWidth=1;
-            ctx.beginPath(); ctx.roundRect(hudX, hudY, 150, 70, 8); ctx.fill(); ctx.stroke();
+            // Halo Effect
+            ctx.shadowBlur = 15; ctx.shadowColor = '#ef4444';
+            ctx.fillStyle = '#ef4444';
+            ctx.beginPath(); ctx.arc(mp.x, mp.y, 8, 0, 2 * Math.PI); ctx.fill();
+            ctx.shadowBlur = 0;
 
-            // Velocidade
-            ctx.fillStyle = '#fff'; ctx.font='bold 32px monospace';
-            ctx.fillText(Math.round(mainPacket.speed), hudX+15, hudY+45);
-            ctx.fillStyle='#888'; ctx.font='12px monospace';
-            ctx.fillText("km/h", hudX+80, hudY+45);
-
-            // Marcha (Gear)
-            ctx.fillStyle = '#ef4444'; ctx.font='bold 24px monospace';
-            ctx.fillText(mainPacket.gear, hudX+115, hudY+45);
-
-            // Acelerador/Freio (Barras)
-            const barW = 120; const barH = 6;
-            // Throttle
-            ctx.fillStyle = '#111'; ctx.fillRect(hudX+15, hudY+55, barW, barH);
-            ctx.fillStyle = '#22c55e'; ctx.fillRect(hudX+15, hudY+55, barW * (mainPacket.throttle/100), barH);
-            // Brake
-            const isBraking = mainPacket.brake > 0 || mainPacket.brake === true;
-            ctx.fillStyle = isBraking ? '#ef4444' : '#333';
-            ctx.fillRect(hudX+15, hudY+63, isBraking ? barW : 0, barH);
+            // HUD
+            drawHUD(ctx, mainPacket);
         }
+    };
+
+    const drawHUD = (ctx, packet) => {
+        const hudX = 20; const hudY = 20;
+        ctx.fillStyle = 'rgba(10,10,10,0.85)'; ctx.strokeStyle='#333'; ctx.lineWidth=1;
+        ctx.beginPath(); ctx.roundRect(hudX, hudY, 150, 70, 8); ctx.fill(); ctx.stroke();
+
+        // Speed
+        ctx.fillStyle = '#fff'; ctx.font='bold 32px monospace';
+        ctx.fillText(Math.round(packet.speed), hudX+15, hudY+45);
+        ctx.fillStyle='#888'; ctx.font='12px monospace';
+        ctx.fillText("km/h", hudX+80, hudY+45);
+
+        // Gear
+        ctx.fillStyle = '#ef4444'; ctx.font='bold 24px monospace';
+        ctx.fillText(packet.gear, hudX+115, hudY+45);
+
+        // Barras
+        const barW = 120; const barH = 6;
+        ctx.fillStyle = '#111'; ctx.fillRect(hudX+15, hudY+55, barW, barH);
+        ctx.fillStyle = '#22c55e'; ctx.fillRect(hudX+15, hudY+55, barW * (packet.throttle/100), barH);
+
+        const isBraking = packet.brake > 0 || packet.brake === true;
+        ctx.fillStyle = isBraking ? '#ef4444' : '#333';
+        ctx.fillRect(hudX+15, hudY+63, isBraking ? barW : 0, barH);
     };
 
     const formatTime = (seconds) => {
@@ -217,11 +248,13 @@ const TrackMap = ({ year, raceId, driver, opponent, lapNumber, onLapChange, avai
                 <canvas ref={canvasRef} width={800} height={500} className="w-full h-full object-contain" />
             </div>
 
-            {/* Barra de Controles Inferior */}
             <div className="h-16 bg-gray-900 border-t border-gray-800 flex items-center px-4 gap-4 shrink-0 z-30">
                 <div className="flex items-center gap-2">
                     <button onClick={togglePlay} className="w-10 h-10 rounded-full bg-cyan-600 hover:bg-cyan-500 text-white flex items-center justify-center transition-all shadow-lg shadow-cyan-900/50">
                         {isPlaying ? "⏸" : "▶"}
+                    </button>
+                    <button onClick={stopSimulation} className="w-8 h-8 rounded-full bg-gray-700 hover:bg-red-500 text-white flex items-center justify-center transition-all">
+                        ⏹
                     </button>
                 </div>
 
@@ -233,7 +266,6 @@ const TrackMap = ({ year, raceId, driver, opponent, lapNumber, onLapChange, avai
                     <input type="range" min="0" max="100" step="0.1" value={progress} onChange={handleScrub} className="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500 hover:accent-cyan-400"/>
                 </div>
 
-                {/* Dropdown Extra para seleção rápida se a lista lateral estiver longe */}
                 <div className="flex items-center gap-2 border-l border-gray-700 pl-4">
                     <span className="text-xs text-gray-500 font-bold uppercase hidden sm:inline">Volta:</span>
                     <select

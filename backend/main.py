@@ -3,21 +3,20 @@ from fastapi.middleware.cors import CORSMiddleware
 import fastf1
 import os
 import pandas as pd
-import numpy as np
+import gc  # Garbage Collector (Fundamental para liberar memória)
 
 # 1. Configuração Inicial
 app = FastAPI()
 
-# Configuração de CORS (Fundamental para o React conseguir acessar este servidor)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Em produção, você colocaria o domínio do seu site aqui
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Configura o Cache do FastF1
+# Configura Cache (Isso ajuda na velocidade, mas ocupa disco, não RAM)
 cache_dir = 'cache'
 if not os.path.exists(cache_dir):
     os.makedirs(cache_dir)
@@ -26,24 +25,25 @@ fastf1.Cache.enable_cache(cache_dir)
 
 @app.get("/")
 def read_root():
-    return {"message": "API de Telemetria F1 Online! 🏎️"}
+    return {"message": "API de Telemetria F1 Otimizada 🚀"}
 
 
 @app.get("/api/races/{year}")
 def get_races(year: int):
-    """ Retorna o calendário de corridas do ano """
     try:
         schedule = fastf1.get_event_schedule(year)
-        # Filtra e formata para JSON
         races_list = []
-        for index, row in schedule.iterrows():
-            # Pegamos apenas eventos oficiais
+        for _, row in schedule.iterrows():
             races_list.append({
-                "round": int(row['RoundNumber']),  # Conversão explícita para int
+                "round": int(row['RoundNumber']),
                 "name": str(row['EventName']),
                 "date": str(row['EventDate']),
                 "location": str(row['Location'])
             })
+
+        # Limpeza
+        del schedule
+        gc.collect()
         return races_list
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -51,11 +51,10 @@ def get_races(year: int):
 
 @app.get("/api/drivers/{year}/{race_id}")
 def get_drivers(year: int, race_id: int):
-    """ Retorna a lista de pilotos de uma corrida específica """
     try:
-        # race_id é o Round Number (ex: 20 para Brasil em 2023)
         session = fastf1.get_session(year, race_id, 'R')
-        session.load(telemetry=False, weather=False, messages=False)
+        # Carrega APENAS info da sessão, sem voltas ou telemetria pesada
+        session.load(telemetry=False, weather=False, messages=False, laps=False)
 
         drivers_data = []
         for drv in session.drivers:
@@ -63,8 +62,12 @@ def get_drivers(year: int, race_id: int):
             drivers_data.append({
                 "code": str(info['Abbreviation']),
                 "team": str(info['TeamName']),
-                "number": str(info['DriverNumber'])  # Garante que é string
+                "number": str(info['DriverNumber'])
             })
+
+        # Libera memória
+        del session
+        gc.collect()
         return drivers_data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -74,34 +77,32 @@ def get_drivers(year: int, race_id: int):
 def get_laps(year: int, race_id: int, driver_code: str):
     try:
         session = fastf1.get_session(year, race_id, 'R')
-        session.load(telemetry=False, weather=False, messages=False)  # Carregamento leve
+        # Carrega voltas, mas SEM telemetria (que é o mais pesado)
+        session.load(telemetry=False, weather=False, messages=False)
 
         laps = session.laps.pick_drivers(driver_code)
-
-        # Filtra voltas válidas (sem pit in/out malucos)
         valid_laps = laps.pick_quicklaps()
 
-        # OTIMIZAÇÃO: Calcular a volta mais rápida UMA vez fora do loop
+        # Pre-calcula volta mais rápida
         fastest_lap = laps.pick_fastest()
         fastest_lap_num = int(fastest_lap['LapNumber']) if not pd.isna(fastest_lap['LapNumber']) else -1
 
         laps_data = []
         for _, row in valid_laps.iterrows():
-            # Formata o tempo da volta (ex: 1:32.400)
             lap_time = str(row['LapTime']).split('days')[-1].strip()
-            # Remove o "00:" inicial se tiver
             if lap_time.startswith("00:"):
                 lap_time = lap_time[3:]
 
-            # Conversão segura do número da volta
             lap_num = int(row['LapNumber'])
-
             laps_data.append({
                 "lap_number": lap_num,
-                "lap_time": lap_time[:10],  # Corta precisão excessiva
-                # CORREÇÃO DO ERRO 500: bool() converte o numpy.bool_ para bool nativo
+                "lap_time": lap_time[:10],
                 "is_fastest": bool(lap_num == fastest_lap_num)
             })
+
+        # Limpeza agressiva
+        del session, laps, valid_laps
+        gc.collect()
 
         return laps_data
     except Exception as e:
@@ -109,44 +110,50 @@ def get_laps(year: int, race_id: int, driver_code: str):
         return []
 
 
-# 2. ATUALIZADO: Telemetria aceita "lap_number" opcional
 @app.get("/api/telemetry/{year}/{race_id}/{driver_code}")
 def get_telemetry(year: int, race_id: int, driver_code: str, lap: int = 0):
     try:
         session = fastf1.get_session(year, race_id, 'R')
-        session.load()
+        # AQUI é o gargalo. Carregamos telemetria, mas desligamos clima e mensagens
+        session.load(telemetry=True, weather=False, messages=False)
 
         driver_laps = session.laps.pick_drivers(driver_code)
 
-        # Se lap=0, pega a mais rápida (comportamento padrão)
         if lap == 0:
             target_lap = driver_laps.pick_fastest()
         else:
-            # Tenta pegar a volta específica
             target_lap = driver_laps[driver_laps['LapNumber'] == lap].iloc[0]
 
+        # Pega telemetria e reduz colunas desnecessárias imediatamente
         telemetry = target_lap.get_telemetry()
+
+        # Downsampling: Opcional, pega 1 a cada 2 pontos para reduzir tamanho do JSON se necessário
+        # telemetry = telemetry.iloc[::2]
 
         data = []
         for _, row in telemetry.iterrows():
-            # CORREÇÃO: Converter todos os tipos NumPy para nativos
             data.append({
                 "time": row['Time'].total_seconds(),
-                "x": float(row['X']),  # numpy float -> float
-                "y": float(row['Y']),  # numpy float -> float
-                "speed": float(row['Speed']),  # numpy float/int -> float
-                "gear": int(row['nGear']),  # numpy int -> int
+                "x": float(row['X']),
+                "y": float(row['Y']),
+                "speed": float(row['Speed']),
+                "gear": int(row['nGear']),
                 "throttle": float(row['Throttle']),
                 "brake": bool(row['Brake']) if row['Brake'] in [0, 1, True, False] else float(row['Brake'])
-                # Tratamento seguro para freio
             })
+
+        # Limpeza crítica
+        del session, driver_laps, target_lap, telemetry
+        gc.collect()
+
         return data
     except Exception as e:
         print(f"Erro telemetria: {e}")
+        # Mesmo no erro, tentamos limpar
+        gc.collect()
         raise HTTPException(status_code=500, detail="Erro ao processar telemetria")
 
 
-# Para rodar via código (opcional, pois usaremos terminal)
 if __name__ == "__main__":
     import uvicorn
 
